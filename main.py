@@ -6,66 +6,147 @@ from pybricks.parameters import Port, Stop, Direction, Button, Color
 from pybricks.tools import wait, StopWatch, DataLog
 from pybricks.robotics import DriveBase
 from pybricks.media.ev3dev import SoundFile, ImageFile
-
+import Caminho
+import Coordenada
+import Direcao
 
 ev3 = EV3Brick()
 ultra_sensor = UltrasonicSensor(Port.S4)
 color_sensor = ColorSensor(Port.S1)
 gyro_sensor = GyroSensor(Port.S2)
-
 motor_esq = Motor(Port.C)
 motor_dir = Motor(Port.D)
 motor_garra = Motor(Port.B)
-
 robot = DriveBase(motor_esq, motor_dir, wheel_diameter = 43.2, axle_track = 122.1231)
-
+robot.settings()
 DRIVE_SPEED = 100
 VELOCIDADE_GARRA = 600
 LIMITE_GARRA = 40
+PASSO = 10 #cm
 
-PASSO = 10
-#esquerda, cima, direita, baixo
-DIRECOES = [0,1,2,3]
-PASSOS = [[-1,0],[0,1],[1,0],[0,-1]]
+PASSO_LESTE = Coordenada(-1,0)
+PASSO_NORTE = Coordenada(0,1)
+PASSO_OESTE = Coordenada(1,0)
+PASSO_SUL = Coordenada(0,-1)
+PASSOS = [PASSO_LESTE, PASSO_NORTE, PASSO_OESTE,PASSO_SUL] #array auxiliar i%4
 
+pos_atual = Coordenada(0,0)
+dir_atual = Direcao.NORTE
 
-pos_atual = [0,0]
-dir_atual = 1
-#0 norte, 1 leste, 2 sul, 3 oeste
+ultimas_coord       = []
+coords_disponiveis  = [] 
+caminhos_possiveis  = [] 
 
-#[[x,y]],
-ultimas_coord = []
+def salvaCaminho(caminho):
+    caminhos_possiveis.append(caminho)
 
-#[[x,y],]
-coords_disponiveis = []
-
-#[[[x1,y1],[x2,y2]], [[x1,y1],[x2,y2]], ...]
-caminhos_possiveis = []
-
-
-#não vou me lembrar como isso funciona, mas segue a lógica de caminhos de um grafo
-#guardando nos caminhos_possiveis as coordenadas do ponto atual para o ponto da frente
-def temCaminho():
-    coord_frente = [x1 + x2 for x1, x2 in zip(pos_atual, PASSOS[DIRECOES[dir_atual%4]])]
-    if ultra_sensor.distance()/10 > PASSO:
-        if not passo_frente in ultimas_coord or passo_frente in coords_bloqueadas:
-            coords_disponiveis.append(coord_frente)
-            caminhos_possiveis.append([pos_atual, coord_frente])
-        return True
-    coords_bloqueadas.append([x1 + x2 for x1, x2 in zip(pos_atual, PASSOS[dir_atual%4])])
+def caminhoRedundante(caminho):
+    for i in caminhos_possiveis:
+        if i == caminho:
+            return True
     return False
 
+def coordenadaExplorada(coordenada):
+    for i in ultimas_coord:
+        if coordenada == i:
+            return True
+        return False
+
+def temCaminho():
+    coord_frente = pos_atual + PASSOS[dir_atual%4]
+    caminho_frente = Caminho(pos_atual,coord_frente)
+    if ultra_sensor.distance()/10 > PASSO:
+        #se o caminho nao foi guardado, guarde
+        if not caminhoRedundante(caminho_frente):
+            salvaCaminho(caminho_frente)
+        #se a coordenada nao foi explorada salve em coords disponiveis
+        if not coordenadaExplorada(coord_frente):
+            coords_disponiveis.append(coord_frente)
+        return True
+    return False
+
+def turnCorrecao(angulo):
+    gyro_sensor.reset_angle(0)  # Reseta o ângulo do giroscópio para 0
+    robot.turn(angulo)  # Executa a rotação desejada
+
+    # Lê o ângulo após a rotação
+    angulo_atual = gyro_sensor.angle()
+
+    # Corrige se o ângulo atual for diferente do desejado
+    if angulo_atual > angulo:
+        # Se girou mais do que o necessário, ajusta para a esquerda
+        ajuste = angulo_atual - angulo
+        robot.turn(-ajuste)  # Ajuste no sentido inverso
+    elif angulo_atual < angulo:
+        # Se girou menos do que o necessário, ajusta para a direita
+        ajuste = angulo - angulo_atual
+        robot.turn(ajuste)  # Ajuste no sentido normal
+
+
+def viraParaCoord(coord):
+    global dir_atual
+
+    # calcula a diferença de coordenadas entre coord e pos_atual
+    diferenca = coord - pos_atual
+
+    # determina a direção alvo com base na diferença
+    #melhorar isso com um iterador e os arrays de passos predefinidos
+    if diferenca == PASSO_LESTE:
+        direcao_alvo = Direcao.LESTE
+    elif diferenca == PASSO_NORTE:
+        direcao_alvo = Direcao.NORTE
+    elif diferenca == PASSO_OESTE:
+        direcao_alvo = Direcao.OESTE
+    elif diferenca == PASSO_SUL:
+        direcao_alvo = Direcao.SUL
+    else:
+        return False
+    # Calcula o ângulo necessário para alinhar a direção
+    diferenca_direcao = (direcao_alvo - dir_atual) % 4
+    angulo = diferenca_direcao * 90  # Cada passo é uma rotação de 90 graus
+    # Atualiza a direção atual e vira o robô
+    dir_atual = direcao_alvo
+    turnCorrecao(angulo)
+    return True
+
+def viraParaDir(dir):
+    global dir_atual
+    diferenca_dir = (dir - dir_atual) %4
+    angulo = diferenca_dir * 90
+    turnCorrecao(angulo)
+    dir_atual = dir
+
+def moverParaCoord(coord):
+    if viraParaCoord(coord):
+        robot.straight(PASSO)
+        ultimas_coord.append(coord)
 
 def voltarPasso():
-    while(dir_atual%4 != (ultimas_coord[-1][1])%4):
-        viraEsquerda()
-    robot.straight(ultimas_coord[-1][0])
-    ultimas_coord.pop(-1)
+    if ultimas_coord:
+        ultima_coord = ultimas_coord[-1]
+        moverParaCoord(ultima_coord)
+        ultimas_coord.pop(-1)
 
-def voltarInicio():
-    ev3.speaker.say(str(len(ultimas_coord)))
-    while(len(ultimas_coord) >= 1):
-        voltarPasso()
+def checarArredores():
+    global pos_atual
+    global dir_atual
+    dir_original = dir_atual
+    #olha para os quatro lados e checa se temCaminho()
+    for i in range(len(PASSOS)):
+        coord_adj = pos_atual + PASSOS[i]
+        viraParaCoord(coord_adj)
+        temCaminho()
+    viraParaDir(dir_original)
+
+def navegar():
+    #utiliza todas as funções de movimento para explorar o ambiente em busca do verde
+    while(True):
+        checarArredores()
+        if coords_disponiveis:
+            coord_selecionada = coords_disponiveis.pop(0)  # Seleciona a primeira coordenada disponível
+            moverParaCoord(coord_selecionada)  # Mover para a nova coordenada
+        else: 
+            voltarPasso()
 
 def usarGarra(velocidade):
     if velocidade >= 0:
@@ -81,39 +162,8 @@ def procuraVerde():
         return True
     return False
 
-# metodo pra calcular o angulo da curva
-def calculaTurn(dir_desejada):
-    global dir_atual
-
-def viraEsquerda():
-    global dir_atual
-    gyro_sensor.reset_angle(0)
-    robot.turn(-90)
-    if gyro_sensor.angle() > -90:
-        robot.turn(-90+gyro_sensor.angle())
-    dir_atual -= 1
-
-def viraDireita():
-    global dir_atual
-    gyro_sensor.reset_angle(0)
-    robot.turn(90)
-    if gyro_sensor.angle() > 90*1.05:
-        robot.turn(-1*(gyro_sensor.angle() - 90))
-    elif gyro_sensor.angle < 90*0.95:
-        robot.turn(90 - gyro_sensor.angle())
-    dir_atual += 1    
-
-def moverFrente():
-    robot.reset()
-    robot.drive(DRIVE_SPEED, 0)
-    # ultimas_coord.append([x1 + x2 for x1, x2 in zip(pos_atual, PASSOS[DIRECOES[dir_atual%4]])])
-    # move passo para frente
-
-def procuraCaminho():
-    while(True):
-        viraDireita
-        
-
+def voltarInicio():
+    pass
 
 
 def salva():
@@ -121,28 +171,11 @@ def salva():
     voltarInicio()
     usarGarra(VELOCIDADE_GARRA)
 
-def checarArredores():
-    robot.turn(120)
-
-def navegar():
-    procuraCaminho()
-    while(True):
-        if procuraVerde():
-            ultimas_coord.append([robot.distance(), dir_atual+2])
-            robot.stop()
-            salva()
-            break
-        if not temCaminho():
-            robot.stop()
-            ultimas_coord.append([robot.distance(), dir_atual+2])
-            procuraCaminho()
 
 def main():
     usarGarra(VELOCIDADE_GARRA)
     navegar()
 
-def teste():
-    navegar()
 
 
 
