@@ -139,6 +139,7 @@ def checarArredores():
         temCaminho()
     viraParaDir(dir_original)
 
+#está errado
 def ehAdjascente(coord):
     diferenca = coord - pos_atual
     if diferenca.x <= 1 and diferenca.y <= 1:
@@ -184,7 +185,6 @@ def salva():
     voltarInicio()
     usarGarra(VELOCIDADE_GARRA)
 
-
 def main():
     usarGarra(VELOCIDADE_GARRA)
     navegar()
@@ -194,7 +194,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # espiral()
-    # teste()
-    # viraEsquerda()
-    # viraDireita()

@@ -17,3 +17,6 @@ class Coordenada:
         if isinstance(other, Coordenada):
             return Coordenada(self.x - other.x, self.y - other.y)
         return NotImplemented
+
+    def __str__(self):
+        return "("+ self.x + ", " + self.y + ")"
